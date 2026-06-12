@@ -1,0 +1,13 @@
+{
+  "name": "puzzle-drag-godot",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "test:web": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.59.1",
+    "@types/node": "^25.9.1"
+  }
+}

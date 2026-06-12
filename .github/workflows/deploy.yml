@@ -1,0 +1,104 @@
+name: CI/CD & Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+env:
+  GODOT_VERSION: '4.6.2'
+
+jobs:
+  test-and-build:
+    name: Test and Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Godot ${{ env.GODOT_VERSION }} + export templates
+        uses: chickensoft-games/setup-godot@v2
+        with:
+          version: ${{ env.GODOT_VERSION }}
+          use-dotnet: false
+          include-templates: true
+
+      - name: Import project assets
+        run: godot --headless --import
+
+      - name: Run all headless test suites
+        run: |
+          fail=0
+          for f in tests/run_*.gd; do
+            name=$(basename "$f")
+            echo "── $name ──────────────"
+            out=$(godot --headless --script "res://tests/$name" 2>&1) || { echo "$out"; echo "::error::$name exited non-zero"; fail=1; continue; }
+            echo "$out"
+            if echo "$out" | grep -qE "[1-9][0-9]* failure"; then echo "::error::$name reported failures"; fail=1; fi
+          done
+          exit $fail
+
+      - name: Run GdUnit4 starter suite
+        run: |
+          godot --headless \
+            -s res://addons/gdUnit4/bin/GdUnitCmdTool.gd \
+            -a res://test --ignoreHeadlessMode -c
+
+      - name: Export Web build (tolerate known shutdown crash)
+        run: |
+          mkdir -p dist
+          godot --headless --export-release "Web" dist/index.html || rc=$?
+          echo "godot export exited with code ${rc:-0} (non-zero is known 4.6.2 teardown segfault)"
+
+      - name: Sanity-check export output
+        run: |
+          ls -la dist
+          test -f dist/index.html
+          test -f dist/index.js
+          test -f dist/index.wasm
+          test -f dist/index.pck
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Web-boot smoke (headless Chromium)
+        run: npx playwright test
+
+      - name: Upload Pages artifact
+        if: github.ref == 'refs/heads/main'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist/
+
+  deploy:
+    name: Deploy to GitHub Pages
+    if: github.ref == 'refs/heads/main'
+    needs: test-and-build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        uses: actions/deploy-pages@v4
+        id: deployment
