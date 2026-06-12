@@ -31,3 +31,15 @@ override.cfg
 # OS noise.
 .DS_Store
 Thumbs.db
+
+# Node.js dependencies
+node_modules/
+
+# Claude CLI workspace caches
+.claude/worktrees/
+.claude/workspaces/
+.claude/settings.local.json
+.claude/.credentials.json
+.env
+.env.*
+.mcp.json
